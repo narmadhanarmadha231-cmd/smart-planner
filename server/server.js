@@ -1,6 +1,5 @@
 require("dotenv").config();
 
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -13,9 +12,30 @@ const port = process.env.PORT || 5000;
 
 const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 
-// Middleware
-app.use(cors());
+// Allow requests from Vercel frontend and localhost dev
+const allowedOrigins = [
+  /^https:\/\/.*\.vercel\.app$/,
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (Postman, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      const allowed = allowedOrigins.some((pattern) => pattern.test(origin));
+      if (allowed) return callback(null, true);
+      callback(new Error(`CORS blocked: ${origin}`));
+    },
+    credentials: true,
+  })
+);
+
 app.use(express.json());
+
+// Health check for Render uptime
+app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 // Routes
 app.use("/api/tasks", taskRoutes);
