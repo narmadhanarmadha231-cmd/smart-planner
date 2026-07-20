@@ -12,7 +12,7 @@ const port = process.env.PORT || 5000;
 
 const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 
-// Allow requests from Vercel frontend and localhost dev
+// Allow requests from Vercel frontend and localhost
 const allowedOrigins = [
   /^https:\/\/.*\.vercel\.app$/,
   /^http:\/\/localhost:\d+$/,
@@ -22,10 +22,14 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (Postman, curl, server-to-server)
       if (!origin) return callback(null, true);
-      const allowed = allowedOrigins.some((pattern) => pattern.test(origin));
+
+      const allowed = allowedOrigins.some((pattern) =>
+        pattern.test(origin)
+      );
+
       if (allowed) return callback(null, true);
+
       callback(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
@@ -34,20 +38,22 @@ app.use(
 
 app.use(express.json());
 
-// Health check for Render uptime
-app.get("/health", (req, res) => res.json({ status: "ok" }));
+// Health check
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
 
-// Routes
+// API Routes
 app.use("/api/tasks", taskRoutes);
 app.use("/api/users", userRoutes);
 
-// Check MongoDB URL
+// Check MongoDB connection string
 if (!mongoUri) {
-  console.error("❌ Missing MongoDB connection string. Add MONGODB_URI in .env");
+  console.error("❌ Missing MongoDB connection string.");
   process.exit(1);
 }
 
-// MongoDB Connection
+// Connect to MongoDB
 mongoose
   .connect(mongoUri, {
     serverSelectionTimeoutMS: 5000,
@@ -55,21 +61,19 @@ mongoose
   .then(() => {
     console.log("✅ MongoDB Connected");
   })
-  .catch((error) => {
-    console.error("❌ MongoDB Error:", error.message);
+  .catch((err) => {
+    console.error("❌ MongoDB Error:", err.message);
   });
 
-const path = require("path");
-
-// Serve frontend static files
-app.use(express.static(path.join(__dirname, "../client/dist")));
-
-// Wildcard route to handle React Router client-side navigation
-app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(__dirname, "../client/dist/index.html"));
+// 404 for unknown API routes
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "API route not found",
+  });
 });
 
-// Start Server
+// Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
 });
