@@ -1,6 +1,6 @@
 // api/index.js  — Vercel Serverless Function
 // Wraps the full Express app so it runs as a serverless function on Vercel.
-// This eliminates cold starts (Vercel warms up in <300ms vs Render's 30s).
+// Optimized for fast serverless database connection times.
 
 const express = require("express");
 const mongoose = require("mongoose");
@@ -11,19 +11,43 @@ const app = express();
 // ── CORS ─────────────────────────────────────────────────────────────────────
 app.use(
   cors({
-    origin: (origin, cb) => cb(null, true), // allow all on same Vercel domain
+    origin: (origin, cb) => cb(null, true),
     credentials: true,
   })
 );
 app.use(express.json());
 
-// ── MongoDB (reuse connection across warm invocations) ────────────────────────
-let cachedDb = null;
+// ── MongoDB Caching (Official Vercel Serverless Pattern) ─────────────────────
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
 async function connectDB() {
-  if (cachedDb && mongoose.connection.readyState === 1) return;
-  cachedDb = await mongoose.connect(process.env.MONGODB_URI, {
-    serverSelectionTimeoutMS: 8000,
-  });
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000, // Fail quickly if firewalled instead of hanging
+    };
+
+    cached.promise = mongoose.connect(process.env.MONGODB_URI, opts).then((mongooseInstance) => {
+      return mongooseInstance;
+    });
+  }
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null; // Clear cached promise on failure to retry next time
+    throw e;
+  }
+
+  return cached.conn;
 }
 
 app.use(async (req, res, next) => {
